@@ -104,6 +104,41 @@ class SolutionEvaluation:
     penalized_criterion_m3: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TestScenario:
+    """Воспроизводимый сценарий проверки программы."""
+
+    code: str
+    title: str
+    purpose: str
+    powder_mass_kg: float
+    chamber_volume_m3: float = BASE_CHAMBER_VOLUME_M3
+    barrel_length_m: float = BASE_BARREL_LENGTH_M
+    powder_name: str = POWDER_NAME
+
+
+TEST_SCENARIOS = (
+    TestScenario(
+        code="valid",
+        title="Допустимое БР",
+        purpose="проверка нулевого штрафа при выполнении всех ограничений",
+        powder_mass_kg=BASE_POWDER_MASS_KG,
+    ),
+    TestScenario(
+        code="error",
+        title="Ошибочное БР",
+        purpose="проверка безопасной обработки некорректной массы заряда",
+        powder_mass_kg=-1.0,
+    ),
+    TestScenario(
+        code="invalid",
+        title="Недопустимое БР",
+        purpose="проверка штрафа при превышении допустимого давления",
+        powder_mass_kg=2.0,
+    ),
+)
+
+
 def _error_result(
     message: str,
     *,
@@ -505,8 +540,82 @@ def evaluate_ballistic_solution(
     )
 
 
+def run_test_scenarios() -> list[tuple[TestScenario, SolutionEvaluation]]:
+    """Последовательно выполнить все контрольные сценарии без общего падения."""
+
+    results: list[tuple[TestScenario, SolutionEvaluation]] = []
+    for scenario in TEST_SCENARIOS:
+        try:
+            evaluation = evaluate_ballistic_solution(
+                powder_mass_kg=scenario.powder_mass_kg,
+                chamber_volume_m3=scenario.chamber_volume_m3,
+                barrel_length_m=scenario.barrel_length_m,
+                powder_name=scenario.powder_name,
+            )
+        except Exception as error:  # noqa: BLE001 - изоляция сценариев верхнего уровня
+            evaluation = SolutionEvaluation(
+                status="ошибка",
+                message=(
+                    "Перехвачена непредвиденная ошибка сценария: "
+                    f"{type(error).__name__}: {error}"
+                ),
+                criterion_w_pm_m3=None,
+            )
+        results.append((scenario, evaluation))
+    return results
+
+
+def _format_constraint_value(constraint: ConstraintResult) -> tuple[float, float, str]:
+    """Подготовить значение и предел ограничения для консольного вывода."""
+
+    if constraint.unit == "Па":
+        return constraint.value / 1.0e6, constraint.limit / 1.0e6, "МПа"
+    return constraint.value, constraint.limit, constraint.unit
+
+
+def print_scenario_result(
+    scenario: TestScenario,
+    evaluation: SolutionEvaluation,
+) -> None:
+    """Вывести все составляющие оценки одного контрольного сценария."""
+
+    print(f"\n=== {scenario.title} [{scenario.code}] ===")
+    print(f"purpose={scenario.purpose}")
+    print(
+        f"powder={scenario.powder_name}; omega={scenario.powder_mass_kg:.3f} kg; "
+        f"W_0={scenario.chamber_volume_m3:.6e} m^3; "
+        f"l={scenario.barrel_length_m:.3f} m"
+    )
+    print(f"calculation_status={evaluation.status}")
+    print(f"message={evaluation.message}")
+    if evaluation.criterion_w_pm_m3 is None:
+        print("criterion_W_pm=—")
+    else:
+        print(f"criterion_W_pm={evaluation.criterion_w_pm_m3:.9e} m^3")
+
+    if evaluation.status == "ошибка":
+        print("feasible=не определено")
+        print("constraints=не проверялись")
+        print("penalty=—")
+        print("penalized_criterion=—")
+        return
+
+    print(f"feasible={'да' if evaluation.is_feasible else 'нет'}")
+    for constraint in evaluation.constraints:
+        value, limit, unit = _format_constraint_value(constraint)
+        state = "выполнено" if constraint.is_satisfied else "нарушено"
+        print(
+            f"constraint[{constraint.code}]: value={value:.6g} {unit}; "
+            f"condition={constraint.relation} {limit:.6g} {unit}; "
+            f"violation={constraint.normalized_violation:.6f}; {state}"
+        )
+
+    print(f"penalty={evaluation.penalty_m3:.9e} m^3")
+    print(f"penalized_criterion={evaluation.penalized_criterion_m3:.9e} m^3")
+
+
 def main() -> None:
-    """Выполнить один заведомо адекватный тестовый расчёт."""
+    """Выполнить и вывести три контрольных сценария варианта № 36."""
 
     try:
         package_version = version("pyballistics")
@@ -516,22 +625,11 @@ def main() -> None:
     print(f"pyballistics={package_version}")
     print(
         "variant="
-        f"{VARIANT_NUMBER}; model={BALLISTIC_MODEL}; powder={POWDER_NAME}; "
-        f"omega={BASE_POWDER_MASS_KG:.3f} kg"
+        f"{VARIANT_NUMBER}; model={BALLISTIC_MODEL}; criterion={CRITERION_NAME}; "
+        f"penalty_scale={PENALTY_SCALE:g}"
     )
-
-    result = run_ballistics_safe(
-        powder_mass_kg=BASE_POWDER_MASS_KG,
-        chamber_volume_m3=BASE_CHAMBER_VOLUME_M3,
-        barrel_length_m=BASE_BARREL_LENGTH_M,
-    )
-    print(f"status={result.status}; message={result.message}")
-
-    if result.status == "успех":
-        print(f"V_k={result.muzzle_velocity_m_s:.3f} m/s")
-        print(f"P_max={result.max_pressure_pa:.6e} Pa")
-        print(f"P_muzzle={result.muzzle_pressure_pa:.6e} Pa")
-        print(f"layers={result.trajectory['t'].size}")
+    for scenario, evaluation in run_test_scenarios():
+        print_scenario_result(scenario, evaluation)
 
 
 if __name__ == "__main__":
