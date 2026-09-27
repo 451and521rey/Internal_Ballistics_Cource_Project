@@ -49,8 +49,11 @@ INTEGRATION_METHOD = "rk4"
 MAX_INTEGRATION_STEPS = 200_000
 NUMERICAL_PRESSURE_CUTOFF_PA = 1.0e9
 REQUIRED_TRAJECTORY_FIELDS = ("t", "x_p", "v_p", "p_m")
+PENALTY_SCALE = 100.0
 
 CalculationStatus = Literal["успех", "ошибка"]
+EvaluationStatus = Literal["рассчитано", "ошибка"]
+ConstraintRelation = Literal["<=", ">="]
 FloatArray = NDArray[np.float64]
 
 
@@ -66,6 +69,39 @@ class BallisticsResult:
     muzzle_pressure_pa: float | None = None
     execution_time_s: float | None = None
     trajectory: dict[str, FloatArray] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ConstraintResult:
+    """Результат проверки одного ограничения в исходной размерности."""
+
+    code: str
+    description: str
+    value: float
+    limit: float
+    relation: ConstraintRelation
+    unit: str
+    normalized_violation: float
+
+    @property
+    def is_satisfied(self) -> bool:
+        """Вернуть признак выполнения ограничения."""
+
+        return self.normalized_violation == 0.0
+
+
+@dataclass(slots=True)
+class SolutionEvaluation:
+    """Расчёты при трёх температурах и отдельные показатели допустимости."""
+
+    status: EvaluationStatus
+    message: str
+    criterion_w_pm_m3: float | None
+    calculations: dict[str, BallisticsResult] = field(default_factory=dict)
+    constraints: tuple[ConstraintResult, ...] = ()
+    is_feasible: bool | None = None
+    penalty_m3: float | None = None
+    penalized_criterion_m3: float | None = None
 
 
 def _error_result(
@@ -254,6 +290,219 @@ def run_ballistics_safe(
             "Перехвачено исключение численного решателя: "
             f"{type(error).__name__}: {error}"
         )
+
+
+def compute_criterion_w_pm(
+    chamber_volume_m3: float,
+    barrel_length_m: float,
+) -> float:
+    """Вычислить чистый критерий ``W_pm = W_0 + S * l`` в м³."""
+
+    if chamber_volume_m3 <= 0.0:
+        raise ValueError("Начальный объём каморы должен быть положительным.")
+    if barrel_length_m <= 0.0:
+        raise ValueError("Длина хода снаряда должна быть положительной.")
+    return chamber_volume_m3 + BORE_AREA_M2 * barrel_length_m
+
+
+def _check_constraint(
+    *,
+    code: str,
+    description: str,
+    value: float,
+    limit: float,
+    relation: ConstraintRelation,
+    unit: str,
+) -> ConstraintResult:
+    """Проверить одно ограничение и нормировать только его нарушение."""
+
+    if not np.isfinite(value) or not np.isfinite(limit) or limit <= 0.0:
+        raise ValueError(f"Некорректные данные ограничения {code!r}.")
+
+    if relation == "<=":
+        normalized_violation = max(0.0, (value - limit) / limit)
+    elif relation == ">=":
+        normalized_violation = max(0.0, (limit - value) / limit)
+    else:  # pragma: no cover - ограничено типом ConstraintRelation
+        raise ValueError(f"Неизвестный тип ограничения: {relation!r}.")
+
+    return ConstraintResult(
+        code=code,
+        description=description,
+        value=value,
+        limit=limit,
+        relation=relation,
+        unit=unit,
+        normalized_violation=normalized_violation,
+    )
+
+
+def check_variant_constraints(
+    *,
+    normal_max_pressure_pa: float,
+    barrel_length_m: float,
+    cold_muzzle_velocity_m_s: float,
+    hot_muzzle_pressure_pa: float,
+) -> tuple[ConstraintResult, ...]:
+    """Проверить четыре ограничения варианта № 36 независимо от штрафа."""
+
+    return (
+        _check_constraint(
+            code="p_m_normal",
+            description="максимальное давление при нормальной температуре",
+            value=normal_max_pressure_pa,
+            limit=MAX_PRESSURE_PA,
+            relation="<=",
+            unit="Па",
+        ),
+        _check_constraint(
+            code="l_m",
+            description="длина ведущей части канала ствола",
+            value=barrel_length_m,
+            limit=MAX_BARREL_LENGTH_M,
+            relation="<=",
+            unit="м",
+        ),
+        _check_constraint(
+            code="v_pm_cold",
+            description="дульная скорость при температуре −50 °C",
+            value=cold_muzzle_velocity_m_s,
+            limit=MIN_MUZZLE_VELOCITY_COLD_M_S,
+            relation=">=",
+            unit="м/с",
+        ),
+        _check_constraint(
+            code="p_mz_hot",
+            description="дульное давление при температуре +50 °C",
+            value=hot_muzzle_pressure_pa,
+            limit=MAX_MUZZLE_PRESSURE_HOT_PA,
+            relation="<=",
+            unit="Па",
+        ),
+    )
+
+
+def compute_penalty(
+    criterion_w_pm_m3: float,
+    constraints: tuple[ConstraintResult, ...],
+    *,
+    scale: float = PENALTY_SCALE,
+) -> float:
+    """Вычислить штраф отдельно от критерия по нормированным нарушениям.
+
+    Используется квадратичная функция
+    ``P = scale * W_pm * sum(r_i**2)``, где ``r_i`` — безразмерное
+    нормированное нарушение соответствующего ограничения.
+    """
+
+    if criterion_w_pm_m3 <= 0.0 or not np.isfinite(criterion_w_pm_m3):
+        raise ValueError("Чистый критерий должен быть конечным и положительным.")
+    if scale < 0.0 or not np.isfinite(scale):
+        raise ValueError("Масштаб штрафа должен быть конечным и неотрицательным.")
+
+    squared_violation_sum = sum(
+        constraint.normalized_violation**2 for constraint in constraints
+    )
+    return scale * criterion_w_pm_m3 * squared_violation_sum
+
+
+def evaluate_ballistic_solution(
+    powder_mass_kg: float,
+    chamber_volume_m3: float,
+    barrel_length_m: float,
+    *,
+    powder_name: str = POWDER_NAME,
+) -> SolutionEvaluation:
+    """Рассчитать решение при трёх температурах и оценить его допустимость.
+
+    Ошибка любого прямого расчёта имеет отдельный статус. Для неё ограничения
+    не проверяются, допустимость не назначается, а штраф и штрафованный критерий
+    остаются неопределёнными.
+    """
+
+    try:
+        criterion_w_pm_m3 = compute_criterion_w_pm(
+            chamber_volume_m3,
+            barrel_length_m,
+        )
+    except (TypeError, ValueError) as error:
+        return SolutionEvaluation(
+            status="ошибка",
+            message=f"Невозможно вычислить чистый критерий: {error}",
+            criterion_w_pm_m3=None,
+        )
+
+    temperatures = {
+        "normal": NORMAL_TEMPERATURE_K,
+        "cold": COLD_TEMPERATURE_K,
+        "hot": HOT_TEMPERATURE_K,
+    }
+    calculations = {
+        condition: run_ballistics_safe(
+            powder_mass_kg=powder_mass_kg,
+            chamber_volume_m3=chamber_volume_m3,
+            barrel_length_m=barrel_length_m,
+            powder_name=powder_name,
+            initial_temperature_k=temperature_k,
+        )
+        for condition, temperature_k in temperatures.items()
+    }
+
+    failed_conditions = [
+        condition
+        for condition, result in calculations.items()
+        if result.status == "ошибка"
+    ]
+    if failed_conditions:
+        diagnostics = "; ".join(
+            f"{condition}: {calculations[condition].message}"
+            for condition in failed_conditions
+        )
+        return SolutionEvaluation(
+            status="ошибка",
+            message="Ошибка прямого расчёта; штраф не применяется. " + diagnostics,
+            criterion_w_pm_m3=criterion_w_pm_m3,
+            calculations=calculations,
+        )
+
+    normal = calculations["normal"]
+    cold = calculations["cold"]
+    hot = calculations["hot"]
+    if (
+        normal.max_pressure_pa is None
+        or cold.muzzle_velocity_m_s is None
+        or hot.muzzle_pressure_pa is None
+    ):
+        return SolutionEvaluation(
+            status="ошибка",
+            message="Успешный ответ решателя не содержит обязательных результатов.",
+            criterion_w_pm_m3=criterion_w_pm_m3,
+            calculations=calculations,
+        )
+
+    constraints = check_variant_constraints(
+        normal_max_pressure_pa=normal.max_pressure_pa,
+        barrel_length_m=barrel_length_m,
+        cold_muzzle_velocity_m_s=cold.muzzle_velocity_m_s,
+        hot_muzzle_pressure_pa=hot.muzzle_pressure_pa,
+    )
+    is_feasible = all(constraint.is_satisfied for constraint in constraints)
+    penalty_m3 = compute_penalty(criterion_w_pm_m3, constraints)
+
+    return SolutionEvaluation(
+        status="рассчитано",
+        message=(
+            "Все ограничения выполнены."
+            if is_feasible
+            else "Прямой расчёт выполнен, но имеются нарушения ограничений."
+        ),
+        criterion_w_pm_m3=criterion_w_pm_m3,
+        calculations=calculations,
+        constraints=constraints,
+        is_feasible=is_feasible,
+        penalty_m3=penalty_m3,
+        penalized_criterion_m3=criterion_w_pm_m3 + penalty_m3,
+    )
 
 
 def main() -> None:
