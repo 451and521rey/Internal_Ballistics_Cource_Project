@@ -1,0 +1,20 @@
+[project]
+name = "lab1-barysheva"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Andrey Baryshev", email = "andrey.barx@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.10.9",
+    "pyballistics>=1.2.1",
+]
+
+[project.scripts]
+lab1-barysheva = "lab1_barysheva:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
