@@ -10,8 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from math import pi
+from pathlib import Path
 from typing import Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from pyballistics import ozvb_termo
@@ -50,6 +52,8 @@ MAX_INTEGRATION_STEPS = 200_000
 NUMERICAL_PRESSURE_CUTOFF_PA = 1.0e9
 REQUIRED_TRAJECTORY_FIELDS = ("t", "x_p", "v_p", "p_m")
 PENALTY_SCALE = 100.0
+ROOT = Path(__file__).resolve().parent
+FIGURES_DIR = ROOT / "figures"
 
 CalculationStatus = Literal["успех", "ошибка"]
 EvaluationStatus = Literal["рассчитано", "ошибка"]
@@ -614,6 +618,304 @@ def print_scenario_result(
     print(f"penalized_criterion={evaluation.penalized_criterion_m3:.9e} m^3")
 
 
+def configure_plots() -> None:
+    """Настроить единый читаемый стиль рисунков, пригодный для ЧБ-печати."""
+
+    plt.switch_backend("Agg")
+    plt.rcParams.update(
+        {
+            "figure.figsize": (7.2, 4.8),
+            "figure.dpi": 140,
+            "savefig.dpi": 220,
+            "font.family": "DejaVu Sans",
+            "font.size": 10.5,
+            "axes.titlesize": 11.5,
+            "axes.labelsize": 10.5,
+            "axes.edgecolor": "black",
+            "axes.linewidth": 0.8,
+            "axes.grid": True,
+            "grid.color": "0.78",
+            "grid.linestyle": ":",
+            "grid.linewidth": 0.7,
+            "legend.frameon": True,
+            "legend.edgecolor": "black",
+            "lines.linewidth": 1.7,
+        }
+    )
+
+
+def _save_figure(figure: plt.Figure, filename: str) -> Path:
+    """Сохранить рисунок в каталоге отчёта и закрыть объект Matplotlib."""
+
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    target = FIGURES_DIR / filename
+    figure.tight_layout()
+    figure.savefig(target, bbox_inches="tight", facecolor="white")
+    plt.close(figure)
+    return target
+
+
+def _scenario_map(
+    scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
+) -> dict[str, tuple[TestScenario, SolutionEvaluation]]:
+    """Индексировать результаты сценариев по устойчивому коду."""
+
+    return {scenario.code: (scenario, result) for scenario, result in scenario_results}
+
+
+def plot_pressure_profiles(
+    scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
+) -> Path:
+    """Построить давление по координате при нормальной температуре."""
+
+    indexed = _scenario_map(scenario_results)
+    styles = {
+        "valid": {"linestyle": "-", "marker": "o"},
+        "invalid": {"linestyle": "--", "marker": "s"},
+    }
+    figure, axes = plt.subplots()
+
+    for code in ("valid", "invalid"):
+        scenario, evaluation = indexed[code]
+        calculation = evaluation.calculations.get("normal")
+        if calculation is None or calculation.status != "успех":
+            continue
+        position_m = calculation.trajectory["x_p"]
+        pressure_mpa = calculation.trajectory["p_m"] / 1.0e6
+        axes.plot(
+            position_m,
+            pressure_mpa,
+            color="black",
+            linestyle=styles[code]["linestyle"],
+            marker=styles[code]["marker"],
+            markevery=max(1, position_m.size // 11),
+            markersize=4.0,
+            markerfacecolor="white",
+            label=scenario.title,
+        )
+
+    axes.axhline(
+        MAX_PRESSURE_PA / 1.0e6,
+        color="0.25",
+        linestyle="-.",
+        linewidth=1.4,
+        label=r"Ограничение $p_m=330$ МПа",
+    )
+    axes.set_xlabel("Путь снаряда, м")
+    axes.set_ylabel("Среднебаллистическое давление, МПа")
+    axes.set_title("Давление при нормальной начальной температуре")
+    axes.set_xlim(left=0.0)
+    axes.set_ylim(bottom=0.0)
+    axes.legend(loc="best")
+    axes.text(
+        0.98,
+        0.04,
+        "Ошибочное БР: траектория отсутствует",
+        transform=axes.transAxes,
+        horizontalalignment="right",
+        verticalalignment="bottom",
+        fontsize=9,
+    )
+    return _save_figure(figure, "pressure_profiles.png")
+
+
+def plot_cold_velocity_profiles(
+    scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
+) -> Path:
+    """Построить скорость по координате для начальной температуры −50 °C."""
+
+    indexed = _scenario_map(scenario_results)
+    styles = {
+        "valid": {"linestyle": "-", "marker": "o"},
+        "invalid": {"linestyle": "--", "marker": "s"},
+    }
+    figure, axes = plt.subplots()
+
+    for code in ("valid", "invalid"):
+        scenario, evaluation = indexed[code]
+        calculation = evaluation.calculations.get("cold")
+        if calculation is None or calculation.status != "успех":
+            continue
+        position_m = calculation.trajectory["x_p"]
+        velocity_m_s = calculation.trajectory["v_p"]
+        axes.plot(
+            position_m,
+            velocity_m_s,
+            color="black",
+            linestyle=styles[code]["linestyle"],
+            marker=styles[code]["marker"],
+            markevery=max(1, position_m.size // 11),
+            markersize=4.0,
+            markerfacecolor="white",
+            label=scenario.title,
+        )
+
+    axes.axhline(
+        MIN_MUZZLE_VELOCITY_COLD_M_S,
+        color="0.25",
+        linestyle="-.",
+        linewidth=1.4,
+        label=r"Минимум на дульном срезе $v_{pm,-50}=570$ м/с",
+    )
+    axes.axvline(
+        BASE_BARREL_LENGTH_M,
+        color="0.45",
+        linestyle=":",
+        linewidth=1.2,
+        label=r"Дульный срез $l=5{,}10$ м",
+    )
+    axes.set_xlabel("Путь снаряда, м")
+    axes.set_ylabel("Скорость снаряда, м/с")
+    axes.set_title(r"Скорость при начальной температуре $-50\,^{\circ}$C")
+    axes.set_xlim(left=0.0)
+    axes.set_ylim(bottom=0.0)
+    axes.legend(loc="best")
+    return _save_figure(figure, "cold_velocity_profiles.png")
+
+
+def _constraint_utilization(constraint: ConstraintResult) -> float:
+    """Привести ограничение к виду «не более единицы — допустимо»."""
+
+    if constraint.relation == "<=":
+        return constraint.value / constraint.limit
+    if constraint.value <= 0.0:
+        return np.inf
+    return constraint.limit / constraint.value
+
+
+def plot_constraint_utilization(
+    scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
+) -> Path:
+    """Сопоставить нормированные проверочные величины с границей единица."""
+
+    indexed = _scenario_map(scenario_results)
+    labels = (
+        r"$p_m$",
+        r"$l_m$",
+        r"$v_{pm,-50}$",
+        r"$p_{mz,+50}$",
+    )
+    positions = np.arange(len(labels), dtype=float)
+    width = 0.34
+    figure, axes = plt.subplots()
+
+    for offset, code, hatch, gray in (
+        (-width / 2, "valid", "...", "0.88"),
+        (width / 2, "invalid", "///", "0.62"),
+    ):
+        scenario, evaluation = indexed[code]
+        utilization = [
+            _constraint_utilization(constraint)
+            for constraint in evaluation.constraints
+        ]
+        axes.bar(
+            positions + offset,
+            utilization,
+            width,
+            color=gray,
+            edgecolor="black",
+            linewidth=0.9,
+            hatch=hatch,
+            label=scenario.title,
+        )
+
+    axes.axhline(
+        1.0,
+        color="black",
+        linestyle="--",
+        linewidth=1.4,
+        label="Граница допустимости",
+    )
+    axes.set_xticks(positions, labels)
+    axes.set_ylabel("Нормированная проверочная величина, 1")
+    axes.set_title("Проверка ограничений варианта № 36")
+    axes.set_ylim(bottom=0.0)
+    axes.legend(loc="upper right")
+    axes.text(
+        0.01,
+        0.97,
+        "Ошибочное БР: ограничения не проверяются",
+        transform=axes.transAxes,
+        horizontalalignment="left",
+        verticalalignment="top",
+        fontsize=9,
+    )
+    return _save_figure(figure, "constraint_utilization.png")
+
+
+def plot_criterion_and_penalty(
+    scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
+) -> Path:
+    """Показать раздельно чистый критерий и добавленный штраф."""
+
+    display_order = ("valid", "invalid", "error")
+    indexed = _scenario_map(scenario_results)
+    labels = [indexed[code][0].title for code in display_order]
+    positions = np.arange(len(display_order), dtype=float)
+    criteria = np.zeros(len(display_order))
+    penalties = np.zeros(len(display_order))
+
+    for index, code in enumerate(display_order):
+        _, evaluation = indexed[code]
+        if evaluation.status == "ошибка":
+            continue
+        criteria[index] = evaluation.criterion_w_pm_m3 or 0.0
+        penalties[index] = evaluation.penalty_m3 or 0.0
+
+    figure, axes = plt.subplots()
+    axes.bar(
+        positions,
+        criteria,
+        width=0.58,
+        color="0.88",
+        edgecolor="black",
+        linewidth=0.9,
+        hatch="...",
+        label=r"Чистый критерий $W_{pm}$",
+    )
+    axes.bar(
+        positions,
+        penalties,
+        width=0.58,
+        bottom=criteria,
+        color="0.55",
+        edgecolor="black",
+        linewidth=0.9,
+        hatch="///",
+        label="Штраф",
+    )
+    axes.scatter(
+        [positions[2]],
+        [max(criteria + penalties) * 0.12],
+        color="black",
+        marker="x",
+        s=75,
+        linewidths=1.8,
+        label="Ошибка: итог не определяется",
+        zorder=4,
+    )
+    axes.set_xticks(positions, labels)
+    axes.set_ylabel(r"Значение показателя, м$^3$")
+    axes.set_title("Раздельное представление критерия и штрафа")
+    axes.set_ylim(bottom=0.0)
+    axes.legend(loc="upper right")
+    return _save_figure(figure, "criterion_and_penalty.png")
+
+
+def build_all_figures(
+    scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
+) -> list[Path]:
+    """Детерминированно пересоздать все рисунки лабораторного отчёта."""
+
+    configure_plots()
+    return [
+        plot_pressure_profiles(scenario_results),
+        plot_cold_velocity_profiles(scenario_results),
+        plot_constraint_utilization(scenario_results),
+        plot_criterion_and_penalty(scenario_results),
+    ]
+
+
 def main() -> None:
     """Выполнить и вывести три контрольных сценария варианта № 36."""
 
@@ -628,8 +930,12 @@ def main() -> None:
         f"{VARIANT_NUMBER}; model={BALLISTIC_MODEL}; criterion={CRITERION_NAME}; "
         f"penalty_scale={PENALTY_SCALE:g}"
     )
-    for scenario, evaluation in run_test_scenarios():
+    scenario_results = run_test_scenarios()
+    for scenario, evaluation in scenario_results:
         print_scenario_result(scenario, evaluation)
+
+    for path in build_all_figures(scenario_results):
+        print(f"created={path.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
