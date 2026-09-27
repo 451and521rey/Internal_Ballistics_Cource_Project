@@ -32,7 +32,7 @@ MIN_MUZZLE_VELOCITY_COLD_M_S = 570.0
 MAX_MUZZLE_PRESSURE_HOT_PA = 170.0e6
 CRITERION_NAME = "W_pm"
 
-# Общие условия и базовое баллистическое решение (СИ)
+# Общие условия и базовое решение прямой задачи (СИ)
 P_IGN_0_PA = 5.0e6
 FORCING_PRESSURE_PA = 30.0e6
 NORMAL_TEMPERATURE_K = 293.15
@@ -124,19 +124,19 @@ class TestScenario:
 TEST_SCENARIOS = (
     TestScenario(
         code="valid",
-        title="Допустимое БР",
+        title="Допустимое решение прямой задачи",
         purpose="проверка нулевого штрафа при выполнении всех ограничений",
         powder_mass_kg=BASE_POWDER_MASS_KG,
     ),
     TestScenario(
         code="error",
-        title="Ошибочное БР",
+        title="Ошибочное решение прямой задачи",
         purpose="проверка безопасной обработки некорректной массы заряда",
         powder_mass_kg=-1.0,
     ),
     TestScenario(
         code="invalid",
-        title="Недопустимое БР",
+        title="Недопустимое решение прямой задачи",
         purpose="проверка штрафа при превышении допустимого давления",
         powder_mass_kg=2.0,
     ),
@@ -663,6 +663,15 @@ def _scenario_map(
     return {scenario.code: (scenario, result) for scenario, result in scenario_results}
 
 
+def _scenario_figure_label(scenario: TestScenario) -> str:
+    """Перенести длинное название решения для компактной подписи рисунка."""
+
+    return scenario.title.replace(
+        " решение прямой задачи",
+        "\nрешение прямой задачи",
+    )
+
+
 def plot_pressure_profiles(
     scenario_results: list[tuple[TestScenario, SolutionEvaluation]],
 ) -> Path:
@@ -691,7 +700,7 @@ def plot_pressure_profiles(
             markevery=max(1, position_m.size // 11),
             markersize=4.0,
             markerfacecolor="white",
-            label=scenario.title,
+            label=_scenario_figure_label(scenario),
         )
 
     axes.axhline(
@@ -710,11 +719,12 @@ def plot_pressure_profiles(
     axes.text(
         0.98,
         0.04,
-        "Ошибочное БР: траектория отсутствует",
+        "Ошибочное решение прямой задачи:\nтраектория отсутствует",
         transform=axes.transAxes,
         horizontalalignment="right",
         verticalalignment="bottom",
         fontsize=9,
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.85},
     )
     return _save_figure(figure, "pressure_profiles.png")
 
@@ -747,7 +757,7 @@ def plot_cold_velocity_profiles(
             markevery=max(1, position_m.size // 11),
             markersize=4.0,
             markerfacecolor="white",
-            label=scenario.title,
+            label=_scenario_figure_label(scenario),
         )
 
     axes.axhline(
@@ -816,7 +826,7 @@ def plot_constraint_utilization(
             edgecolor="black",
             linewidth=0.9,
             hatch=hatch,
-            label=scenario.title,
+            label=_scenario_figure_label(scenario),
         )
 
     axes.axhline(
@@ -832,11 +842,11 @@ def plot_constraint_utilization(
     axes.set_ylim(bottom=0.0)
     axes.legend(loc="upper right")
     axes.text(
-        0.01,
-        0.97,
-        "Ошибочное БР: ограничения не проверяются",
+        0.5,
+        -0.16,
+        "Ошибочное решение прямой задачи:\nограничения не проверяются",
         transform=axes.transAxes,
-        horizontalalignment="left",
+        horizontalalignment="center",
         verticalalignment="top",
         fontsize=9,
     )
@@ -850,7 +860,9 @@ def plot_criterion_and_penalty(
 
     display_order = ("valid", "invalid", "error")
     indexed = _scenario_map(scenario_results)
-    labels = [indexed[code][0].title for code in display_order]
+    labels = [
+        _scenario_figure_label(indexed[code][0]) for code in display_order
+    ]
     positions = np.arange(len(display_order), dtype=float)
     criteria = np.zeros(len(display_order))
     penalties = np.zeros(len(display_order))
@@ -895,6 +907,7 @@ def plot_criterion_and_penalty(
         zorder=4,
     )
     axes.set_xticks(positions, labels)
+    axes.tick_params(axis="x", labelsize=9)
     axes.set_ylabel(r"Значение показателя, м$^3$")
     axes.set_title("Раздельное представление критерия и штрафа")
     axes.set_ylim(bottom=0.0)
