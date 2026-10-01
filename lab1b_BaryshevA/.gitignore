@@ -1,6 +1,7 @@
 # Игнорируем чужие работы и материалы задания в этой папке
 works_to_review/
 assignment/
+example/
 *.zip
 *.rar
 *.7z
