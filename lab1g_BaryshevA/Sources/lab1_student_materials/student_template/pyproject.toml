@@ -1,0 +1,14 @@
+[project]
+name = "lab1-ballistics-report"
+version = "0.1.0"
+description = "Лабораторная работа № 1: воспроизводимый прямой баллистический расчёт"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "matplotlib>=3.8,<4",
+    "numpy>=1.26,<3",
+    "pyballistics==1.2.1",
+]
+
+[tool.uv]
+package = false
+
