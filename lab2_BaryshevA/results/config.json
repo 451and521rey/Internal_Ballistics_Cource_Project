@@ -1,0 +1,1010 @@
+{
+  "data_contract": {
+    "diagnostics_in_optimizer_history": false,
+    "empty_csv_field": "значение отсутствует/неприменимо",
+    "repeat_run_behavior": "атомарная полная замена файлов основного журнала"
+  },
+  "environment": {
+    "implementation": "CPython",
+    "machine": "AMD64",
+    "platform": "Windows-10-10.0.19045-SP0"
+  },
+  "experiment": {
+    "budget_per_run": 600,
+    "cache_enabled": false,
+    "method_settings": {
+      "DE-C": {
+        "atol": 0.0,
+        "maxiter": 10000,
+        "method": "differential_evolution",
+        "polish": false,
+        "popsize": 15,
+        "tol": 0.0,
+        "updating": "immediate",
+        "workers": 1
+      },
+      "SLSQP-C": {
+        "ftol": 1e-09,
+        "maxiter": 10000,
+        "method": "SLSQP"
+      },
+      "SLSQP-P": {
+        "ftol": 1e-09,
+        "maxiter": 10000,
+        "method": "SLSQP"
+      },
+      "TPE-P": {
+        "method": "TPESampler",
+        "n_jobs": 1,
+        "n_startup_trials": 20,
+        "pruning": false,
+        "x_distribution": [
+          -2.5,
+          2.0
+        ],
+        "y_distribution": [
+          -1.5,
+          3.0
+        ]
+      }
+    },
+    "parallelism": 1,
+    "phase_counts": {
+      "control": 8,
+      "main": 40,
+      "penalty": 20
+    },
+    "run_count": 68,
+    "run_plan": [
+      {
+        "a": 0.0,
+        "direction": "min",
+        "method": "SLSQP-C",
+        "phase": "control",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "control__min__slsqp-c__a0__rhonone__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 0.0,
+        "direction": "min",
+        "method": "DE-C",
+        "phase": "control",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "control__min__de-c__a0__rhonone__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 0.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "control",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "control__min__slsqp-p__a0__rho100__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 0.0,
+        "direction": "min",
+        "method": "TPE-P",
+        "phase": "control",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "control__min__tpe-p__a0__rho100__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 0.0,
+        "direction": "max",
+        "method": "SLSQP-C",
+        "phase": "control",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "control__max__slsqp-c__a0__rhonone__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 0.0,
+        "direction": "max",
+        "method": "DE-C",
+        "phase": "control",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "control__max__de-c__a0__rhonone__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 0.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "control",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "control__max__slsqp-p__a0__rho100__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 0.0,
+        "direction": "max",
+        "method": "TPE-P",
+        "phase": "control",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "control__max__tpe-p__a0__rho100__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "main__min__slsqp-c__a1__rhonone__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 2,
+        "run_key": "main__min__slsqp-c__a1__rhonone__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 3,
+        "run_key": "main__min__slsqp-c__a1__rhonone__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 4,
+        "run_key": "main__min__slsqp-c__a1__rhonone__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 5,
+        "run_key": "main__min__slsqp-c__a1__rhonone__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "main__min__de-c__a1__rhonone__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 2,
+        "run_key": "main__min__de-c__a1__rhonone__r2",
+        "seed": 23,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 3,
+        "run_key": "main__min__de-c__a1__rhonone__r3",
+        "seed": 37,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 4,
+        "run_key": "main__min__de-c__a1__rhonone__r4",
+        "seed": 51,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 5,
+        "run_key": "main__min__de-c__a1__rhonone__r5",
+        "seed": 71,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "main__min__slsqp-p__a1__rho100__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 2,
+        "run_key": "main__min__slsqp-p__a1__rho100__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 3,
+        "run_key": "main__min__slsqp-p__a1__rho100__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 4,
+        "run_key": "main__min__slsqp-p__a1__rho100__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 5,
+        "run_key": "main__min__slsqp-p__a1__rho100__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "main__min__tpe-p__a1__rho100__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 2,
+        "run_key": "main__min__tpe-p__a1__rho100__r2",
+        "seed": 23,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 3,
+        "run_key": "main__min__tpe-p__a1__rho100__r3",
+        "seed": 37,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 4,
+        "run_key": "main__min__tpe-p__a1__rho100__r4",
+        "seed": 51,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 5,
+        "run_key": "main__min__tpe-p__a1__rho100__r5",
+        "seed": 71,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "main__max__slsqp-c__a1__rhonone__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 2,
+        "run_key": "main__max__slsqp-c__a1__rhonone__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 3,
+        "run_key": "main__max__slsqp-c__a1__rhonone__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 4,
+        "run_key": "main__max__slsqp-c__a1__rhonone__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 5,
+        "run_key": "main__max__slsqp-c__a1__rhonone__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 1,
+        "run_key": "main__max__de-c__a1__rhonone__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 2,
+        "run_key": "main__max__de-c__a1__rhonone__r2",
+        "seed": 23,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 3,
+        "run_key": "main__max__de-c__a1__rhonone__r3",
+        "seed": 37,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 4,
+        "run_key": "main__max__de-c__a1__rhonone__r4",
+        "seed": 51,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "DE-C",
+        "phase": "main",
+        "rho": null,
+        "run_id": 5,
+        "run_key": "main__max__de-c__a1__rhonone__r5",
+        "seed": 71,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "main__max__slsqp-p__a1__rho100__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 2,
+        "run_key": "main__max__slsqp-p__a1__rho100__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 3,
+        "run_key": "main__max__slsqp-p__a1__rho100__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 4,
+        "run_key": "main__max__slsqp-p__a1__rho100__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 5,
+        "run_key": "main__max__slsqp-p__a1__rho100__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 1,
+        "run_key": "main__max__tpe-p__a1__rho100__r1",
+        "seed": 11,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 2,
+        "run_key": "main__max__tpe-p__a1__rho100__r2",
+        "seed": 23,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 3,
+        "run_key": "main__max__tpe-p__a1__rho100__r3",
+        "seed": 37,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 4,
+        "run_key": "main__max__tpe-p__a1__rho100__r4",
+        "seed": 51,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "TPE-P",
+        "phase": "main",
+        "rho": 100.0,
+        "run_id": 5,
+        "run_key": "main__max__tpe-p__a1__rho100__r5",
+        "seed": 71,
+        "start": null
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 1,
+        "run_key": "penalty__min__slsqp-p__a1__rho1__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 2,
+        "run_key": "penalty__min__slsqp-p__a1__rho1__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 3,
+        "run_key": "penalty__min__slsqp-p__a1__rho1__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 4,
+        "run_key": "penalty__min__slsqp-p__a1__rho1__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 5,
+        "run_key": "penalty__min__slsqp-p__a1__rho1__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 1,
+        "run_key": "penalty__min__slsqp-p__a1__rho10__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 2,
+        "run_key": "penalty__min__slsqp-p__a1__rho10__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 3,
+        "run_key": "penalty__min__slsqp-p__a1__rho10__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 4,
+        "run_key": "penalty__min__slsqp-p__a1__rho10__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "min",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 5,
+        "run_key": "penalty__min__slsqp-p__a1__rho10__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 1,
+        "run_key": "penalty__max__slsqp-p__a1__rho1__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 2,
+        "run_key": "penalty__max__slsqp-p__a1__rho1__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 3,
+        "run_key": "penalty__max__slsqp-p__a1__rho1__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 4,
+        "run_key": "penalty__max__slsqp-p__a1__rho1__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 1.0,
+        "run_id": 5,
+        "run_key": "penalty__max__slsqp-p__a1__rho1__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 1,
+        "run_key": "penalty__max__slsqp-p__a1__rho10__r1",
+        "seed": null,
+        "start": [
+          -1.0,
+          2.0
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 2,
+        "run_key": "penalty__max__slsqp-p__a1__rho10__r2",
+        "seed": null,
+        "start": [
+          0.25,
+          0.25
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 3,
+        "run_key": "penalty__max__slsqp-p__a1__rho10__r3",
+        "seed": null,
+        "start": [
+          1.5,
+          2.5
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 4,
+        "run_key": "penalty__max__slsqp-p__a1__rho10__r4",
+        "seed": null,
+        "start": [
+          -2.0,
+          2.75
+        ]
+      },
+      {
+        "a": 1.0,
+        "direction": "max",
+        "method": "SLSQP-P",
+        "phase": "penalty",
+        "rho": 10.0,
+        "run_id": 5,
+        "run_key": "penalty__max__slsqp-p__a1__rho10__r5",
+        "seed": null,
+        "start": [
+          1.0,
+          -0.25
+        ]
+      }
+    ],
+    "seeds": [
+      11,
+      23,
+      37,
+      51,
+      71
+    ],
+    "slsqp_starts": [
+      [
+        -1.0,
+        2.0
+      ],
+      [
+        0.25,
+        0.25
+      ],
+      [
+        1.5,
+        2.5
+      ],
+      [
+        -2.0,
+        2.75
+      ],
+      [
+        1.0,
+        -0.25
+      ]
+    ]
+  },
+  "schema_version": 1,
+  "software": {
+    "matplotlib": "3.11.2",
+    "numpy": "2.5.4",
+    "optuna": "5.0.0",
+    "python": "3.12.14",
+    "scipy": "1.18.1"
+  },
+  "task": {
+    "bounds": {
+      "x": [
+        -2.5,
+        2.0
+      ],
+      "y": [
+        -1.5,
+        3.0
+      ]
+    },
+    "constraints": [
+      "x <= 2",
+      "y <= 3",
+      "x + y >= 0.5"
+    ],
+    "control_a": 0.0,
+    "default_rho": 100.0,
+    "directions": [
+      "min",
+      "max"
+    ],
+    "feasibility_tolerance": 1e-06,
+    "formula": "x^2 + y^2 + a * (2 - cos(4*x) - cos(4*y))",
+    "main_a": 1.0,
+    "penalty": "sum(max(0, g_i)^2)",
+    "residuals": [
+      "(x-2)/4.5",
+      "(y-3)/4.5",
+      "(0.5-x-y)/9"
+    ]
+  }
+}
