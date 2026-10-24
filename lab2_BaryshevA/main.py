@@ -1386,6 +1386,18 @@ def _draw_region_boundary(axis: Any) -> None:
 
 
 def _save_figure(figure: Any, filename: str) -> None:
+    from matplotlib.ticker import FuncFormatter
+
+    comma_formatter = FuncFormatter(
+        lambda value, _position: f"{value:g}".replace(".", ",")
+    )
+    for axis in figure.axes:
+        if axis.get_xscale() == "linear":
+            axis.xaxis.set_major_formatter(comma_formatter)
+        if axis.get_yscale() == "linear":
+            axis.yaxis.set_major_formatter(comma_formatter)
+        if hasattr(axis, "zaxis"):
+            axis.zaxis.set_major_formatter(comma_formatter)
     path = PROJECT_DIR / "figures" / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path, bbox_inches="tight", facecolor="white")
@@ -1696,9 +1708,15 @@ def generate_report_artifacts() -> None:
     _plot_penalty_sensitivity(plt, penalty_rows)
     _plot_surface(plt)
 
+    # Компиляция существующего авторского report.md не меняет его текст и не
+    # запускает поиск. Импорт расположен здесь, чтобы команда check была лёгкой.
+    from build_pdf import build_pdf
+
+    pdf_path = build_pdf()
+
     print(
         "Артефакты отчёта пересозданы без нового поиска: "
-        "3 таблицы CSV, report_tables.md и 7 рисунков."
+        f"3 таблицы CSV, report_tables.md, 7 рисунков и {pdf_path.name}."
     )
     print(
         f"Источник: {validated['runs']} runs, {validated['evaluations']} evaluations, "
