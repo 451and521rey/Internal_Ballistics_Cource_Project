@@ -1,2 +1,5 @@
 Sources/
 TODO.md
+.venv/
+__pycache__/
+*.py[cod]

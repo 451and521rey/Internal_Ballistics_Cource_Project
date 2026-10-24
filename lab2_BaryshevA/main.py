@@ -7,11 +7,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
+from scipy.optimize import Bounds, LinearConstraint, OptimizeResult
+from scipy.optimize import differential_evolution, minimize
 
 
 # Контракт задачи из Sources/01_assignment.md.
@@ -21,6 +26,15 @@ REGION_VERTICES = ((2.0, 3.0), (2.0, -1.5), (-2.5, 3.0))
 FEASIBILITY_TOLERANCE = 1e-6
 DEFAULT_BUDGET = 600
 DEFAULT_RHO = 100.0
+RUN_SEEDS = (11, 23, 37, 51, 71)
+SLSQP_STARTS = (
+    (-1.0, 2.0),
+    (0.25, 0.25),
+    (1.5, 2.5),
+    (-2.0, 2.75),
+    (1.0, -0.25),
+)
+SCIPY_METHODS = ("SLSQP-C", "DE-C", "SLSQP-P")
 
 
 class BudgetExceeded(RuntimeError):
@@ -183,6 +197,359 @@ def analytical_control() -> dict[str, dict[str, object]]:
         "min": {"point": minimum, "f_raw": raw_function(minimum, a=0.0)},
         "max": {"point": maximum, "f_raw": raw_function(maximum, a=0.0)},
     }
+
+
+@dataclass(frozen=True)
+class RunSpec:
+    """Полная идентификация одного независимого запуска."""
+
+    phase: str
+    method: str
+    direction: str
+    a: float
+    rho: float | None
+    run_id: int
+    seed: int | None = None
+    start: tuple[float, float] | None = None
+
+    @property
+    def run_key(self) -> str:
+        rho_tag = "none" if self.rho is None else f"{self.rho:g}"
+        return (
+            f"{self.phase}__{self.direction}__{self.method.lower()}"
+            f"__a{self.a:g}__rho{rho_tag}__r{self.run_id}"
+        )
+
+    def validate(self) -> None:
+        if self.phase not in {"control", "main", "penalty"}:
+            raise ValueError(f"Неизвестная фаза: {self.phase}")
+        direction_sign(self.direction)
+        if self.method.endswith("-P") and self.rho is None:
+            raise ValueError(f"Для {self.method} требуется rho")
+        if self.method.endswith("-C") and self.rho is not None:
+            raise ValueError(f"Для {self.method} rho должен быть пустым")
+        if self.method.startswith("SLSQP") and self.start is None:
+            raise ValueError(f"Для {self.method} требуется начальная точка")
+        if self.method == "DE-C" and self.seed is None:
+            raise ValueError("Для DE-C требуется seed")
+
+
+@dataclass
+class BudgetedObjective:
+    """Цель одного запуска со строгим cap и полной историей реальных вызовов f."""
+
+    spec: RunSpec
+    budget: int = DEFAULT_BUDGET
+    evaluations: list[dict[str, Any]] = field(default_factory=list)
+    iterations: list[dict[str, Any]] = field(default_factory=list)
+    n_grad: int = 0
+    n_constraint: int = 0
+    _started_at: float = field(default_factory=time.perf_counter)
+
+    def evaluate(self, point: Sequence[float]) -> float:
+        """Посчитать f ровно один раз и сохранить все производные величины."""
+
+        if len(self.evaluations) >= self.budget:
+            raise BudgetExceeded(
+                f"{self.spec.run_key}: бюджет B={self.budget} исчерпан"
+            )
+
+        # Копируем координаты до передачи в историю: SciPy меняет рабочие массивы.
+        x, y = _point_xy(point)
+        f_value = raw_function((x, y), self.spec.a)
+        residuals = normalized_residuals((x, y))
+        point_penalty = sum(max(0.0, value) ** 2 for value in residuals)
+        point_violation = max(0.0, *residuals)
+        target = direction_sign(self.spec.direction) * f_value
+        if self.spec.rho is not None:
+            target += self.spec.rho * point_penalty
+
+        self.evaluations.append(
+            {
+                "run_key": self.spec.run_key,
+                "phase": self.spec.phase,
+                "method": self.spec.method,
+                "direction": self.spec.direction,
+                "a": self.spec.a,
+                "rho": self.spec.rho,
+                "run_id": self.spec.run_id,
+                "seed": self.spec.seed,
+                "eval_id": len(self.evaluations) + 1,
+                "x": x,
+                "y": y,
+                "f_raw": f_value,
+                "objective": target,
+                "g1": residuals[0],
+                "g2": residuals[1],
+                "g3": residuals[2],
+                "violation": point_violation,
+                "penalty": point_penalty,
+                "feasible": point_violation <= FEASIBILITY_TOLERANCE,
+                "elapsed_s": time.perf_counter() - self._started_at,
+            }
+        )
+        return target
+
+    def gradient(self, point: Sequence[float]) -> np.ndarray:
+        """Учесть аналитический градиент отдельно; f здесь не вызывается."""
+
+        self.n_grad += 1
+        return objective_gradient(
+            point,
+            a=self.spec.a,
+            direction=self.spec.direction,
+            rho=self.spec.rho,
+        )
+
+    def explicit_constraint(self, point: Sequence[float]) -> float:
+        """Явное ограничение SLSQP-C в принятой SciPy форме c(x)>=0."""
+
+        self.n_constraint += 1
+        x, y = _point_xy(point)
+        return x + y - 0.5
+
+    def iteration_callback(self, point: Sequence[float]) -> None:
+        """Сохранить принятую итерацию без дополнительного вычисления f."""
+
+        x, y = _point_xy(point)
+        self.iterations.append(
+            {
+                "run_key": self.spec.run_key,
+                "phase": self.spec.phase,
+                "method": self.spec.method,
+                "direction": self.spec.direction,
+                "a": self.spec.a,
+                "rho": self.spec.rho,
+                "run_id": self.spec.run_id,
+                "iteration_id": len(self.iterations) + 1,
+                "eval_id_at_callback": len(self.evaluations),
+                "x": x,
+                "y": y,
+                "elapsed_s": time.perf_counter() - self._started_at,
+            }
+        )
+
+
+def _matching_evaluation(
+    evaluations: Sequence[dict[str, Any]], point: Sequence[float]
+) -> dict[str, Any] | None:
+    """Найти реально вычисленную запись рекомендации без повторного вызова f."""
+
+    x, y = _point_xy(point)
+    matches = [
+        record
+        for record in evaluations
+        if max(abs(float(record["x"]) - x), abs(float(record["y"]) - y)) <= 1e-10
+    ]
+    return matches[-1] if matches else None
+
+
+def _best_feasible_evaluation(
+    evaluations: Sequence[dict[str, Any]], direction: str
+) -> dict[str, Any] | None:
+    """Выбрать по исходной f лучшую допустимую запись всей истории."""
+
+    feasible = [record for record in evaluations if bool(record["feasible"])]
+    if not feasible:
+        return None
+    return min(
+        feasible,
+        key=lambda record: direction_sign(direction) * float(record["f_raw"]),
+    )
+
+
+def _optimizer_settings(spec: RunSpec) -> dict[str, Any]:
+    if spec.method.startswith("SLSQP"):
+        return {"method": "SLSQP", "maxiter": 10000, "ftol": 1e-9}
+    if spec.method == "DE-C":
+        return {
+            "method": "differential_evolution",
+            "popsize": 15,
+            "maxiter": 10000,
+            "tol": 0.0,
+            "atol": 0.0,
+            "polish": False,
+            "workers": 1,
+            "updating": "immediate",
+        }
+    raise ValueError(f"Нет настроек для метода {spec.method}")
+
+
+def _result_row(
+    evaluator: BudgetedObjective,
+    result: OptimizeResult | None,
+    *,
+    stop_reason: str,
+    message: str,
+) -> dict[str, Any]:
+    """Сформировать сводку, не выполняя диагностических вызовов f."""
+
+    spec = evaluator.spec
+    recommendation = None
+    recommendation_point: tuple[float, float] | None = None
+    if result is not None and getattr(result, "x", None) is not None:
+        recommendation_point = _point_xy(result.x)
+        recommendation = _matching_evaluation(evaluator.evaluations, result.x)
+    best = _best_feasible_evaluation(evaluator.evaluations, spec.direction)
+
+    row: dict[str, Any] = {
+        "run_key": spec.run_key,
+        "phase": spec.phase,
+        "method": spec.method,
+        "direction": spec.direction,
+        "a": spec.a,
+        "rho": spec.rho,
+        "run_id": spec.run_id,
+        "seed": spec.seed,
+        "start_x": None if spec.start is None else spec.start[0],
+        "start_y": None if spec.start is None else spec.start[1],
+        "budget": evaluator.budget,
+        "settings": json.dumps(
+            _optimizer_settings(spec), ensure_ascii=False, sort_keys=True
+        ),
+        "n_eval": len(evaluator.evaluations),
+        "n_grad": evaluator.n_grad if spec.method.startswith("SLSQP") else None,
+        "n_constraint": evaluator.n_constraint if spec.method == "SLSQP-C" else None,
+        "n_iteration": len(evaluator.iterations)
+        if spec.method.startswith("SLSQP")
+        else (getattr(result, "nit", None) if result is not None else None),
+        "elapsed_s": time.perf_counter() - evaluator._started_at,
+        "stop_reason": stop_reason,
+        "optimizer_success": None if result is None else bool(result.success),
+        "message": message,
+        "recommendation_x": None
+        if recommendation_point is None
+        else recommendation_point[0],
+        "recommendation_y": None
+        if recommendation_point is None
+        else recommendation_point[1],
+    }
+
+    metric_names = (
+        "f_raw",
+        "objective",
+        "g1",
+        "g2",
+        "g3",
+        "violation",
+        "penalty",
+        "feasible",
+    )
+    for metric in metric_names:
+        row[f"recommendation_{metric}"] = (
+            None if recommendation is None else recommendation[metric]
+        )
+
+    if best is None:
+        row.update(
+            {
+                "best_eval_id": None,
+                "best_x": None,
+                "best_y": None,
+                "best_f_raw": None,
+                "best_objective": None,
+                "best_g1": None,
+                "best_g2": None,
+                "best_g3": None,
+                "best_violation": None,
+                "best_penalty": None,
+            }
+        )
+    else:
+        row.update(
+            {
+                "best_eval_id": best["eval_id"],
+                "best_x": best["x"],
+                "best_y": best["y"],
+                "best_f_raw": best["f_raw"],
+                "best_objective": best["objective"],
+                "best_g1": best["g1"],
+                "best_g2": best["g2"],
+                "best_g3": best["g3"],
+                "best_violation": best["violation"],
+                "best_penalty": best["penalty"],
+            }
+        )
+    return row
+
+
+def run_scipy_method(
+    spec: RunSpec, budget: int = DEFAULT_BUDGET
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Выполнить один независимый запуск обязательного метода SciPy."""
+
+    spec.validate()
+    if spec.method not in SCIPY_METHODS:
+        raise ValueError(f"Метод {spec.method} не является методом SciPy этой работы")
+    evaluator = BudgetedObjective(spec=spec, budget=budget)
+    result: OptimizeResult | None = None
+    stop_reason = "optimizer_stopped"
+    message = ""
+
+    try:
+        if spec.method == "SLSQP-C":
+            constraint = {
+                "type": "ineq",
+                "fun": evaluator.explicit_constraint,
+                "jac": lambda _point: np.array([1.0, 1.0]),
+            }
+            result = minimize(
+                evaluator.evaluate,
+                np.asarray(spec.start, dtype=float),
+                method="SLSQP",
+                jac=evaluator.gradient,
+                bounds=Bounds(
+                    [X_BOUNDS[0], Y_BOUNDS[0]],
+                    [X_BOUNDS[1], Y_BOUNDS[1]],
+                ),
+                constraints=(constraint,),
+                callback=evaluator.iteration_callback,
+                options={"maxiter": 10000, "ftol": 1e-9, "disp": False},
+            )
+        elif spec.method == "SLSQP-P":
+            # Здесь намеренно нет явного x+y>=0.5: его учитывает только общий штраф.
+            result = minimize(
+                evaluator.evaluate,
+                np.asarray(spec.start, dtype=float),
+                method="SLSQP",
+                jac=evaluator.gradient,
+                bounds=Bounds(
+                    [X_BOUNDS[0], Y_BOUNDS[0]],
+                    [X_BOUNDS[1], Y_BOUNDS[1]],
+                ),
+                callback=evaluator.iteration_callback,
+                options={"maxiter": 10000, "ftol": 1e-9, "disp": False},
+            )
+        else:
+            linear_constraint = LinearConstraint([[1.0, 1.0]], [0.5], [np.inf])
+            result = differential_evolution(
+                evaluator.evaluate,
+                bounds=(X_BOUNDS, Y_BOUNDS),
+                constraints=(linear_constraint,),
+                popsize=15,
+                maxiter=10000,
+                tol=0.0,
+                atol=0.0,
+                polish=False,
+                workers=1,
+                updating="immediate",
+                rng=np.random.default_rng(spec.seed),
+                disp=False,
+            )
+
+        stop_reason = "converged" if bool(result.success) else "optimizer_stopped"
+        message = str(result.message)
+    except BudgetExceeded as error:
+        stop_reason = "budget_reached"
+        message = str(error)
+
+    run_row = _result_row(
+        evaluator,
+        result,
+        stop_reason=stop_reason,
+        message=message,
+    )
+    return run_row, evaluator.evaluations, evaluator.iterations
 
 
 def _assert_close(actual: float, expected: float, tolerance: float, label: str) -> None:
