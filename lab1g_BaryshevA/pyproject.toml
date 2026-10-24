@@ -2,7 +2,6 @@
 name = "lab1-barysheva"
 version = "0.1.0"
 description = "Прямой баллистический расчёт варианта 36"
-readme = "README.md"
 authors = [
     { name = "Andrey Baryshev", email = "andrey.barx@gmail.com" }
 ]

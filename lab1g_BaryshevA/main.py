@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from math import pi
 from pathlib import Path
+import sys
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -145,6 +146,34 @@ TEST_SCENARIOS = (
         powder_mass_kg=2.0,
     ),
 )
+
+# Близкая пара по разные стороны ограничения p_mz,+50 <= 110 МПа. Между
+# точками меняется только масса заряда на 1 г; остальные входные условия
+# одинаковы. Значения выбраны как проверочные, а не как результат оптимизации.
+PENALTY_SENSITIVITY_SCENARIOS = (
+    TestScenario(
+        code="boundary_a",
+        title="Точка А — допустимая у границы горячего давления",
+        purpose=(
+            "проверка нулевого штрафа непосредственно перед границей "
+            "p_mz,+50 = 110 МПа"
+        ),
+        powder_mass_kg=2.312,
+        chamber_volume_m3=6.500e-3,
+    ),
+    TestScenario(
+        code="boundary_b",
+        title="Точка Б — недопустимая у границы горячего давления",
+        purpose=(
+            "проверка плавного появления штрафа после пересечения границы "
+            "p_mz,+50 = 110 МПа"
+        ),
+        powder_mass_kg=2.313,
+        chamber_volume_m3=6.500e-3,
+    ),
+)
+
+ALL_TEST_SCENARIOS = TEST_SCENARIOS + PENALTY_SENSITIVITY_SCENARIOS
 
 
 def _error_result(
@@ -683,7 +712,7 @@ def run_test_scenarios() -> list[tuple[TestScenario, SolutionEvaluation]]:
     """Последовательно выполнить все контрольные сценарии без общего падения."""
 
     results: list[tuple[TestScenario, SolutionEvaluation]] = []
-    for scenario in TEST_SCENARIOS:
+    for scenario in ALL_TEST_SCENARIOS:
         try:
             evaluation = evaluate_ballistic_solution(
                 powder_mass_kg=scenario.powder_mass_kg,
@@ -752,6 +781,11 @@ def print_scenario_result(
         print("penalty=—")
         print("penalized_criterion=—")
         return
+
+    for condition in ("normal", "cold", "hot"):
+        calculation = evaluation.calculations.get(condition)
+        if calculation is not None:
+            print(f"stop_reason[{condition}]={calculation.stop_reason or '—'}")
 
     print(f"feasible={'да' if evaluation.is_feasible else 'нет'}")
     for constraint in evaluation.constraints:
@@ -1081,7 +1115,10 @@ def build_all_figures(
 
 
 def main() -> None:
-    """Выполнить и вывести три контрольных сценария варианта № 36."""
+    """Выполнить три исходных сценария и близкую проверочную пару."""
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
 
     try:
         package_version = version("pyballistics")
@@ -1095,7 +1132,22 @@ def main() -> None:
         f"penalty_scale={PENALTY_SCALE:g}"
     )
     scenario_results = run_test_scenarios()
-    for scenario, evaluation in scenario_results:
+    print("\n--- Три исходных контрольных сценария ---")
+    for scenario, evaluation in scenario_results[: len(TEST_SCENARIOS)]:
+        print_scenario_result(scenario, evaluation)
+
+    point_a, point_b = PENALTY_SENSITIVITY_SCENARIOS
+    print("\n--- Близкая пара: чувствительность штрафа ---")
+    print(
+        f"fixed=powder {point_a.powder_name}; "
+        f"W_0={point_a.chamber_volume_m3:.6e} m^3; "
+        "temperatures and limits unchanged"
+    )
+    print(
+        "changed_parameter=omega only; "
+        f"delta_omega={(point_b.powder_mass_kg - point_a.powder_mass_kg):.3f} kg"
+    )
+    for scenario, evaluation in scenario_results[len(TEST_SCENARIOS) :]:
         print_scenario_result(scenario, evaluation)
 
     for path in build_all_figures(scenario_results):
