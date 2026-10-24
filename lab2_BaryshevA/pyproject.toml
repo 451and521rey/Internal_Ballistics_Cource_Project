@@ -1,0 +1,10 @@
+[project]
+name = "lab2-baryshev-a"
+version = "0.1.0"
+description = "Лабораторная работа № 2: методы оптимизации SciPy и Optuna"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "optuna>=5.0.0",
+    "scipy>=1.18.1",
+]
