@@ -1131,6 +1131,581 @@ def execute_experiment() -> None:
     print_saved_summary()
 
 
+def _required_saved_data() -> tuple[
+    list[dict[str, str]],
+    list[dict[str, str]],
+    list[dict[str, str]],
+]:
+    """Загрузить только сохранённые данные; оптимизаторы здесь недоступны."""
+
+    required = (
+        RESULTS_DIR / "runs.csv",
+        RESULTS_DIR / "evaluations.csv",
+        RESULTS_DIR / "iterations.csv",
+        RESULTS_DIR / "config.json",
+    )
+    missing = [path.name for path in required if not path.exists()]
+    if missing:
+        raise SystemExit(
+            "Не найдены результаты: " + ", ".join(missing) + ". Сначала выполните run."
+        )
+    return (
+        _read_csv(RESULTS_DIR / "runs.csv"),
+        _read_csv(RESULTS_DIR / "evaluations.csv"),
+        _read_csv(RESULTS_DIR / "iterations.csv"),
+    )
+
+
+def _csv_float(row: dict[str, str], name: str) -> float | None:
+    value = row.get(name, "")
+    return None if value == "" else float(value)
+
+
+def _main_method_summary(runs: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for direction in ("min", "max"):
+        for method in ALL_METHODS:
+            group = [
+                row
+                for row in runs
+                if row["phase"] == "main"
+                and row["direction"] == direction
+                and row["method"] == method
+            ]
+            values = [
+                float(row["best_f_raw"])
+                for row in group
+                if row["best_f_raw"] != ""
+            ]
+            best = (
+                min(values)
+                if direction == "min" and values
+                else max(values) if values else None
+            )
+            worst = (
+                max(values)
+                if direction == "min" and values
+                else min(values) if values else None
+            )
+            summary.append(
+                {
+                    "direction": direction,
+                    "method": method,
+                    "runs": len(group),
+                    "feasible_runs": len(values),
+                    "best_f_raw": best,
+                    "median_f_raw": statistics.median(values) if values else None,
+                    "worst_f_raw": worst,
+                    "mean_n_eval": statistics.fmean(int(row["n_eval"]) for row in group),
+                    "median_n_eval": statistics.median(
+                        int(row["n_eval"]) for row in group
+                    ),
+                    "budget_stop_count": sum(
+                        row["stop_reason"] == "budget_reached" for row in group
+                    ),
+                    "optimizer_success_count": sum(
+                        row["optimizer_success"] == "True" for row in group
+                    ),
+                }
+            )
+    return summary
+
+
+def _control_comparison(runs: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
+    control = analytical_control()
+    rows: list[dict[str, Any]] = []
+    for direction in ("min", "max"):
+        expected_point = control[direction]["point"]
+        expected_f = float(control[direction]["f_raw"])
+        for method in ALL_METHODS:
+            run = next(
+                row
+                for row in runs
+                if row["phase"] == "control"
+                and row["direction"] == direction
+                and row["method"] == method
+            )
+            best_x = _csv_float(run, "best_x")
+            best_y = _csv_float(run, "best_y")
+            best_f = _csv_float(run, "best_f_raw")
+            point_error = (
+                None
+                if best_x is None or best_y is None
+                else math.hypot(best_x - expected_point[0], best_y - expected_point[1])
+            )
+            rows.append(
+                {
+                    "direction": direction,
+                    "method": method,
+                    "expected_x": expected_point[0],
+                    "expected_y": expected_point[1],
+                    "expected_f_raw": expected_f,
+                    "best_x": best_x,
+                    "best_y": best_y,
+                    "best_f_raw": best_f,
+                    "absolute_f_error": None
+                    if best_f is None
+                    else abs(best_f - expected_f),
+                    "point_distance": point_error,
+                    "n_eval": int(run["n_eval"]),
+                    "stop_reason": run["stop_reason"],
+                    "recommendation_feasible": run["recommendation_feasible"],
+                    "recommendation_violation": _csv_float(
+                        run, "recommendation_violation"
+                    ),
+                }
+            )
+    return rows
+
+
+def _penalty_rows(runs: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
+    selected = [
+        row
+        for row in runs
+        if row["method"] == "SLSQP-P"
+        and (row["phase"] == "penalty" or row["phase"] == "main")
+    ]
+    selected.sort(key=lambda row: (row["direction"], float(row["rho"]), int(row["run_id"])))
+    fields = (
+        "direction",
+        "rho",
+        "run_id",
+        "start_x",
+        "start_y",
+        "recommendation_x",
+        "recommendation_y",
+        "recommendation_f_raw",
+        "recommendation_violation",
+        "recommendation_feasible",
+        "best_f_raw",
+        "best_violation",
+        "n_eval",
+        "stop_reason",
+    )
+    return [{name: row[name] for name in fields} for row in selected]
+
+
+def _write_report_tables(
+    method_summary: Sequence[dict[str, Any]],
+    control_rows: Sequence[dict[str, Any]],
+    penalty_rows: Sequence[dict[str, Any]],
+) -> None:
+    summary_fields = (
+        "direction",
+        "method",
+        "runs",
+        "feasible_runs",
+        "best_f_raw",
+        "median_f_raw",
+        "worst_f_raw",
+        "mean_n_eval",
+        "median_n_eval",
+        "budget_stop_count",
+        "optimizer_success_count",
+    )
+    control_fields = tuple(control_rows[0].keys())
+    penalty_fields = tuple(penalty_rows[0].keys())
+    _atomic_write_csv(RESULTS_DIR / "method_summary.csv", method_summary, summary_fields)
+    _atomic_write_csv(RESULTS_DIR / "control_comparison.csv", control_rows, control_fields)
+    _atomic_write_csv(RESULTS_DIR / "penalty_summary.csv", penalty_rows, penalty_fields)
+
+    lines = [
+        "# Автоматически сформированные таблицы ЛР2",
+        "",
+        "Файл создан командой `uv run python main.py report` только из журналов `results/`.",
+        "",
+        "## Основной опыт a=1",
+        "",
+        "| Направление | Метод | Допустимо | Лучшее f | Медиана f | Среднее n_eval |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for row in method_summary:
+        lines.append(
+            f"| {row['direction']} | {row['method']} | "
+            f"{row['feasible_runs']}/{row['runs']} | "
+            f"{float(row['best_f_raw']):.8f} | {float(row['median_f_raw']):.8f} | "
+            f"{float(row['mean_n_eval']):.1f} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Контроль a=0",
+            "",
+            "| Направление | Метод | Лучшая f | Абс. ошибка f | n_eval | Остановка |",
+            "|---|---|---:|---:|---:|---|",
+        ]
+    )
+    for row in control_rows:
+        lines.append(
+            f"| {row['direction']} | {row['method']} | "
+            f"{float(row['best_f_raw']):.8f} | "
+            f"{float(row['absolute_f_error']):.3e} | {row['n_eval']} | "
+            f"{row['stop_reason']} |"
+        )
+    temporary = RESULTS_DIR / "report_tables.md.tmp"
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temporary.replace(RESULTS_DIR / "report_tables.md")
+
+
+def _configure_plotting() -> Any:
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    plt.rcParams.update(
+        {
+            "font.family": "DejaVu Serif",
+            "font.size": 10.5,
+            "axes.titlesize": 11.5,
+            "axes.labelsize": 10.5,
+            "legend.fontsize": 8.5,
+            "figure.dpi": 120,
+            "savefig.dpi": 220,
+            "axes.grid": True,
+            "grid.alpha": 0.25,
+        }
+    )
+    return plt
+
+
+def _grid_function(a: float, nodes: int = 250) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    x = np.linspace(X_BOUNDS[0], X_BOUNDS[1], nodes)
+    y = np.linspace(Y_BOUNDS[0], Y_BOUNDS[1], nodes)
+    xx, yy = np.meshgrid(x, y)
+    zz = xx**2 + yy**2 + a * (2.0 - np.cos(4.0 * xx) - np.cos(4.0 * yy))
+    feasible_mask = xx + yy >= 0.5
+    return xx, yy, zz, feasible_mask
+
+
+def _draw_region_boundary(axis: Any) -> None:
+    polygon = np.array([REGION_VERTICES[0], REGION_VERTICES[1], REGION_VERTICES[2], REGION_VERTICES[0]])
+    axis.plot(polygon[:, 0], polygon[:, 1], color="black", linewidth=1.5, label="граница области")
+    axis.set_xlim(X_BOUNDS)
+    axis.set_ylim(Y_BOUNDS)
+    axis.set_xlabel("x, безразм.")
+    axis.set_ylabel("y, безразм.")
+
+
+def _save_figure(figure: Any, filename: str) -> None:
+    path = PROJECT_DIR / "figures" / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(path, bbox_inches="tight", facecolor="white")
+
+
+def _plot_control_domain(plt: Any) -> None:
+    xx, yy, zz, mask = _grid_function(a=0.0)
+    figure, axis = plt.subplots(figsize=(7.2, 5.8))
+    contour = axis.contourf(xx, yy, np.ma.masked_where(~mask, zz), levels=24, cmap="viridis")
+    figure.colorbar(contour, ax=axis, label="f₀(x, y), безразм.")
+    _draw_region_boundary(axis)
+    control = analytical_control()
+    axis.scatter(*control["min"]["point"], marker="o", s=85, facecolor="white", edgecolor="black", label="аналитический min")
+    axis.scatter(*control["max"]["point"], marker="X", s=90, color="#d62728", edgecolor="black", label="аналитический max")
+    axis.set_title("Контрольная функция a=0 и допустимый треугольник")
+    axis.set_aspect("equal", adjustable="box")
+    axis.legend(loc="lower left")
+    figure.tight_layout()
+    _save_figure(figure, "01_control_domain.png")
+    plt.close(figure)
+
+
+def _plot_main_results(plt: Any, runs: Sequence[dict[str, str]]) -> None:
+    xx, yy, zz, mask = _grid_function(a=1.0)
+    colors = dict(zip(ALL_METHODS, ("#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd"), strict=True))
+    markers = dict(zip(ALL_METHODS, ("o", "s", "^", "x"), strict=True))
+    figure, axes = plt.subplots(1, 2, figsize=(13.2, 5.8), sharex=True, sharey=True)
+    for axis, direction in zip(axes, ("min", "max"), strict=True):
+        contour = axis.contourf(xx, yy, np.ma.masked_where(~mask, zz), levels=28, cmap="cividis", alpha=0.85)
+        _draw_region_boundary(axis)
+        for method in ALL_METHODS:
+            group = [
+                row for row in runs
+                if row["phase"] == "main" and row["direction"] == direction
+                and row["method"] == method and row["best_x"] != ""
+            ]
+            axis.scatter(
+                [float(row["best_x"]) for row in group],
+                [float(row["best_y"]) for row in group],
+                label=method,
+                marker=markers[method],
+                color=colors[method],
+                edgecolor="black" if markers[method] != "x" else None,
+                s=48,
+            )
+        axis.set_title(f"Лучшие допустимые точки, {direction}")
+        axis.set_aspect("equal", adjustable="box")
+        axis.legend(loc="lower left", ncols=2)
+    figure.colorbar(
+        contour,
+        ax=axes,
+        orientation="horizontal",
+        fraction=0.055,
+        pad=0.12,
+        label="f₁(x, y), безразм.",
+    )
+    figure.suptitle("Основная функция a=1: результаты пяти запусков")
+    figure.subplots_adjust(left=0.07, right=0.98, bottom=0.22, top=0.87, wspace=0.14)
+    _save_figure(figure, "02_main_map_results.png")
+    plt.close(figure)
+
+
+def _find_run_key(
+    runs: Sequence[dict[str, str]], method: str, direction: str, run_id: int
+) -> str:
+    return next(
+        row["run_key"]
+        for row in runs
+        if row["phase"] == "main"
+        and row["method"] == method
+        and row["direction"] == direction
+        and int(row["run_id"]) == run_id
+    )
+
+
+def _plot_search_examples(
+    plt: Any,
+    runs: Sequence[dict[str, str]],
+    evaluations: Sequence[dict[str, str]],
+    iterations: Sequence[dict[str, str]],
+) -> None:
+    evaluations_by_run: dict[str, list[dict[str, str]]] = {}
+    iterations_by_run: dict[str, list[dict[str, str]]] = {}
+    for row in evaluations:
+        evaluations_by_run.setdefault(row["run_key"], []).append(row)
+    for row in iterations:
+        iterations_by_run.setdefault(row["run_key"], []).append(row)
+
+    figure, axes = plt.subplots(2, 2, figsize=(11.5, 10.0), sharex=True, sharey=True)
+    examples = (("SLSQP-C", axes[0, 0]), ("SLSQP-P", axes[0, 1]), ("DE-C", axes[1, 0]), ("TPE-P", axes[1, 1]))
+    for method, axis in examples:
+        run_key = _find_run_key(runs, method, "min", 1)
+        records = evaluations_by_run[run_key]
+        _draw_region_boundary(axis)
+        if method.startswith("SLSQP"):
+            axis.scatter(
+                [float(row["x"]) for row in records],
+                [float(row["y"]) for row in records],
+                marker="x",
+                color="#7f7f7f",
+                s=38,
+                label="все вызовы f",
+            )
+            accepted = iterations_by_run[run_key]
+            axis.plot(
+                [float(row["x"]) for row in accepted],
+                [float(row["y"]) for row in accepted],
+                color="#d62728",
+                marker="o",
+                markersize=4,
+                linewidth=1.3,
+                label="callback-итерации",
+            )
+            title = f"{method}: evaluations и iterations"
+        else:
+            scatter = axis.scatter(
+                [float(row["x"]) for row in records],
+                [float(row["y"]) for row in records],
+                c=[int(row["eval_id"]) for row in records],
+                cmap="plasma",
+                marker="." if method == "DE-C" else "x",
+                s=16,
+                alpha=0.7,
+                label="облако вычислений",
+            )
+            figure.colorbar(scatter, ax=axis, fraction=0.045, label="номер вызова f")
+            title = f"{method}: облако поиска, не траектория"
+        axis.set_title(title)
+        axis.set_aspect("equal", adjustable="box")
+        axis.legend(loc="lower left")
+    figure.suptitle("Примеры поиска минимума, run_id=1")
+    figure.tight_layout(rect=(0, 0, 1, 0.97))
+    _save_figure(figure, "03_search_examples.png")
+    plt.close(figure)
+
+
+def _cumulative_feasible(
+    records: Sequence[dict[str, str]], direction: str
+) -> tuple[list[int], list[float]]:
+    current: float | None = None
+    x_values: list[int] = []
+    y_values: list[float] = []
+    for record in records:
+        if record["feasible"] == "True":
+            value = float(record["f_raw"])
+            if current is None:
+                current = value
+            elif direction == "min":
+                current = min(current, value)
+            else:
+                current = max(current, value)
+        x_values.append(int(record["eval_id"]))
+        y_values.append(np.nan if current is None else current)
+    return x_values, y_values
+
+
+def _plot_convergence(
+    plt: Any,
+    runs: Sequence[dict[str, str]],
+    evaluations: Sequence[dict[str, str]],
+) -> None:
+    evaluations_by_run: dict[str, list[dict[str, str]]] = {}
+    for row in evaluations:
+        evaluations_by_run.setdefault(row["run_key"], []).append(row)
+    colors = dict(zip(ALL_METHODS, ("#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd"), strict=True))
+    styles = dict(zip(ALL_METHODS, ("-", "--", "-.", ":"), strict=True))
+    figure, axes = plt.subplots(1, 2, figsize=(13.0, 5.0))
+    for axis, direction in zip(axes, ("min", "max"), strict=True):
+        for method in ALL_METHODS:
+            group = [
+                row for row in runs
+                if row["phase"] == "main" and row["direction"] == direction and row["method"] == method
+            ]
+            for index, run in enumerate(group):
+                xs, ys = _cumulative_feasible(evaluations_by_run[run["run_key"]], direction)
+                axis.step(
+                    xs,
+                    ys,
+                    where="post",
+                    color=colors[method],
+                    linestyle=styles[method],
+                    linewidth=1.1,
+                    alpha=0.72,
+                    label=method if index == 0 else None,
+                )
+        axis.set_xlabel("Номер фактического вызова f")
+        axis.set_ylabel("Лучшее допустимое f, безразм.")
+        axis.set_title(f"Направление {direction}")
+        axis.legend()
+    figure.suptitle("Сходимость по единому бюджету; линии заканчиваются фактически")
+    figure.tight_layout(rect=(0, 0, 1, 0.95))
+    _save_figure(figure, "04_convergence.png")
+    plt.close(figure)
+
+
+def _plot_outcomes_cost(plt: Any, runs: Sequence[dict[str, str]]) -> None:
+    figure, axes = plt.subplots(2, 2, figsize=(12.5, 8.5), sharex="col")
+    positions = {method: index for index, method in enumerate(ALL_METHODS)}
+    colors = dict(zip(ALL_METHODS, ("#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd"), strict=True))
+    for column, direction in enumerate(("min", "max")):
+        group = [row for row in runs if row["phase"] == "main" and row["direction"] == direction]
+        for row in group:
+            method = row["method"]
+            x = positions[method] + (int(row["run_id"]) - 3) * 0.055
+            marker = "o" if method.startswith("SLSQP") else "x"
+            if row["best_f_raw"] != "":
+                axes[0, column].scatter(x, float(row["best_f_raw"]), marker=marker, color=colors[method], s=55)
+            axes[1, column].scatter(x, int(row["n_eval"]), marker=marker, color=colors[method], s=55)
+        axes[0, column].set_title(f"Итоговые значения, {direction}")
+        axes[0, column].set_ylabel("Лучшая допустимая f")
+        axes[1, column].set_title(f"Фактическая стоимость, {direction}")
+        axes[1, column].set_ylabel("Число вызовов f")
+        axes[1, column].set_xticks(range(len(ALL_METHODS)), ALL_METHODS, rotation=15)
+    from matplotlib.lines import Line2D
+
+    legend = [
+        Line2D([0], [0], marker="o", color="black", linestyle="None", label="локальный старт"),
+        Line2D([0], [0], marker="x", color="black", linestyle="None", label="случайный seed"),
+    ]
+    axes[0, 0].legend(handles=legend, loc="best")
+    figure.suptitle("Разброс пяти запусков и фактическая стоимость")
+    figure.tight_layout(rect=(0, 0, 1, 0.96))
+    _save_figure(figure, "05_outcomes_cost.png")
+    plt.close(figure)
+
+
+def _plot_penalty_sensitivity(plt: Any, penalty_rows: Sequence[dict[str, Any]]) -> None:
+    figure, axes = plt.subplots(2, 2, figsize=(12.0, 8.2), sharex=True)
+    colors = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd")
+    markers = ("o", "s", "^", "D", "v")
+    styles = ("-", "--", "-.", ":", (0, (3, 1, 1, 1)))
+    for column, direction in enumerate(("min", "max")):
+        direction_rows = [row for row in penalty_rows if row["direction"] == direction]
+        for run_id in range(1, 6):
+            group = sorted(
+                (row for row in direction_rows if int(row["run_id"]) == run_id),
+                key=lambda row: float(row["rho"]),
+            )
+            rhos = [float(row["rho"]) for row in group]
+            raw_values = [float(row["recommendation_f_raw"]) for row in group]
+            violations = [max(float(row["recommendation_violation"]), 1e-12) for row in group]
+            axes[0, column].plot(
+                rhos,
+                raw_values,
+                marker=markers[run_id - 1],
+                linestyle=styles[run_id - 1],
+                color=colors[run_id - 1],
+                label=f"старт {run_id}",
+            )
+            axes[1, column].plot(
+                rhos,
+                violations,
+                marker=markers[run_id - 1],
+                linestyle=styles[run_id - 1],
+                color=colors[run_id - 1],
+                label=f"старт {run_id}",
+            )
+        axes[0, column].set_xscale("log")
+        axes[0, column].set_title(f"Исходная f рекомендации, {direction}")
+        axes[0, column].set_ylabel("f, безразм.")
+        axes[1, column].set_xscale("log")
+        axes[1, column].set_yscale("log")
+        axes[1, column].axhline(FEASIBILITY_TOLERANCE, color="black", linestyle="--", label="допуск 1e-6")
+        axes[1, column].set_title(f"Нарушение рекомендации, {direction}")
+        axes[1, column].set_xlabel("Коэффициент rho")
+        axes[1, column].set_ylabel("Нормированное нарушение v")
+    axes[0, 0].legend(ncols=2)
+    axes[1, 0].legend(ncols=2)
+    figure.suptitle("Чувствительность SLSQP-P к штрафу: рекомендации оптимизатора")
+    figure.tight_layout(rect=(0, 0, 1, 0.96))
+    _save_figure(figure, "06_penalty_sensitivity.png")
+    plt.close(figure)
+
+
+def _plot_surface(plt: Any) -> None:
+    xx, yy, zz, mask = _grid_function(a=1.0, nodes=140)
+    zz = np.where(mask, zz, np.nan)
+    figure = plt.figure(figsize=(8.2, 6.3))
+    axis = figure.add_subplot(111, projection="3d")
+    surface = axis.plot_surface(xx, yy, zz, cmap="viridis", linewidth=0, antialiased=True, alpha=0.94)
+    axis.set_xlabel("x, безразм.")
+    axis.set_ylabel("y, безразм.")
+    axis.set_zlabel("f₁(x, y), безразм.")
+    axis.set_title("Поверхность основной функции в допустимой области")
+    axis.view_init(elev=28, azim=-125)
+    figure.colorbar(surface, ax=axis, shrink=0.65, pad=0.1, label="f₁")
+    figure.tight_layout()
+    _save_figure(figure, "07_function_surface.png")
+    plt.close(figure)
+
+
+def generate_report_artifacts() -> None:
+    """Пересоздать все таблицы и рисунки без вызова оптимизаторов или LLM."""
+
+    validated = validate_saved_results()
+    runs, evaluations, iterations = _required_saved_data()
+    method_summary = _main_method_summary(runs)
+    control_rows = _control_comparison(runs)
+    penalty_rows = _penalty_rows(runs)
+    _write_report_tables(method_summary, control_rows, penalty_rows)
+
+    plt = _configure_plotting()
+    _plot_control_domain(plt)
+    _plot_main_results(plt, runs)
+    _plot_search_examples(plt, runs, evaluations, iterations)
+    _plot_convergence(plt, runs, evaluations)
+    _plot_outcomes_cost(plt, runs)
+    _plot_penalty_sensitivity(plt, penalty_rows)
+    _plot_surface(plt)
+
+    print(
+        "Артефакты отчёта пересозданы без нового поиска: "
+        "3 таблицы CSV, report_tables.md и 7 рисунков."
+    )
+    print(
+        f"Источник: {validated['runs']} runs, {validated['evaluations']} evaluations, "
+        f"{validated['iterations']} SLSQP iterations."
+    )
+
+
 def _assert_close(actual: float, expected: float, tolerance: float, label: str) -> None:
     if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=tolerance):
         raise AssertionError(f"{label}: ожидалось {expected!r}, получено {actual!r}")
@@ -1221,11 +1796,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("check", "run", "summary"),
+        choices=("check", "run", "report", "summary"),
         default="summary",
         help=(
             "check — самопроверки; run — 68 запусков с заменой журналов; "
-            "summary — сводка сохранённых результатов"
+            "report — таблицы и рисунки без поиска; summary — сводка"
         ),
     )
     return parser
@@ -1239,6 +1814,8 @@ def main() -> None:
         run_checks()
     elif args.command == "run":
         execute_experiment()
+    elif args.command == "report":
+        generate_report_artifacts()
     elif args.command == "summary":
         print_saved_summary()
 
